@@ -69,6 +69,8 @@ python3 console.py
 - `example.py` — minimal login → list devices → detail → logout script.
 - `console.py` — interactive `rich`-based CLI over `MaiClient` for manually
   exercising every endpoint (Italian-language prompts).
+- `tests/` — network-free `pytest` suite covering `client70mai/`; see
+  "For Developers" below.
 - `re/` — the APK, extracted dex/native libs, and Ghidra/pyghidra scripts
   used to reverse the signing algorithm. Not imported by `client70mai`,
   and not shipped in the PyPI package.
@@ -123,7 +125,53 @@ one method that always reads a specific field
 (`resultBodyObject.token`), confirmed, because the client cannot function
 without it.
 
-## Extending the client
+## For Developers
+
+### Local setup
+
+```
+git clone https://github.com/lorenzo-deluca/70maiclient.git
+cd 70maiclient
+pip install -e ".[test,console]"
+```
+
+`-e` (editable install) means changes to `client70mai/` take effect
+immediately, no reinstall needed. The `test` extra pulls in `pytest`; the
+`console` extra pulls in `rich` for `console.py`.
+
+### Running tests
+
+```
+pytest
+```
+
+`tests/` is a from-scratch, network-free suite — nothing in it ever
+calls the real `eu-api.70mai.com`:
+
+- `tests/helpers.py` provides a `FakeSession`/`FakeResponse` test double
+  (passed as `MaiClient(session=...)`) plus a `RecordingSignatureProvider`
+  that stands in for real signing, so endpoint tests can assert on
+  request-body assembly without duplicating the md5 formulas.
+- `tests/test_signing.py` covers those formulas on their own, with
+  golden values computed independently of the implementation.
+- `tests/test_endpoints_simple.py` / `tests/test_endpoints_detailed.py`
+  cover every `MaiClient` method's HTTP path and request body.
+
+When adding a new endpoint method, add a case to whichever of those two
+files fits: `test_endpoints_simple.py`'s table for a fixed path plus a
+couple of pass-through fields, `test_endpoints_detailed.py` for anything
+with defaults, optional fields, or nested structures. Run
+`pytest --cov=client70mai --cov-report=term-missing` (needs `pytest-cov`)
+to check the new method is actually exercised.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs the full test suite on every push/PR to
+`master`, across Python 3.10–3.13. `.github/workflows/publish.yml` runs
+the same suite again as a gate before building/publishing a release — a
+release with failing tests never reaches PyPI.
+
+### Extending the client
 
 - New endpoints follow the existing pattern: build an `extra` dict of
   endpoint-specific fields, pass it to `self._signed_body(extra)`, POST via
@@ -134,11 +182,13 @@ without it.
 - If you reverse-engineer a new signing variant, add it to
   `SignatureProvider` (protocol) and `BanyacKeyMd5SignatureProvider`
   (implementation) rather than hardcoding it in `client.py`.
-- Live view (P2P streaming) is not implemented — static analysis found
-  `getTutkToken`/`living` endpoints backed by the ThroughTek/TUTK SDK, but
-  no request/response shape was captured or confirmed.
+- Live view's control plane is implemented (`get_tutk_token()`,
+  `living()`), but the actual P2P video is ThroughTek/TUTK's proprietary
+  IOTC SDK — out of scope for this REST client. See `client.py`'s
+  module docstring for what that would take.
+- Add a test for anything you add or change — see "Running tests" above.
 
-## Releasing
+### Releasing
 
 Tagging a GitHub Release publishes to PyPI automatically via
 `.github/workflows/publish.yml` (trusted publishing, no stored token).
