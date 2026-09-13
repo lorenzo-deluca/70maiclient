@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "70maiclient"
+version = "0.3.0"
+description = "Reverse-engineered Python client for the 70mai dashcam cloud API (eu-api.70mai.com)"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Lorenzo De Luca" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = ["requests>=2.28"]
+
+[project.optional-dependencies]
+console = ["rich>=13.0"]
+
+[project.urls]
+Homepage = "https://github.com/lorenzo-deluca/70maiclient"
+Issues = "https://github.com/lorenzo-deluca/70maiclient/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["client70mai"]
