@@ -646,8 +646,12 @@ class MaiClient:
         resultBodyObject = {"status": int, "allowPullAlive": int,
         "deviceNetworkLevel": int}.
 
+        `deviceNetworkLevel` is -1 when the device is offline/asleep
+        (observed together with status 0 and allowPullAlive 0).
+
         Example resultBodyObject:
         {"status": 3, "allowPullAlive": 1, "deviceNetworkLevel": 0}
+        {"status": 0, "allowPullAlive": 0, "deviceNetworkLevel": -1}
         """
         return self._post(
             "/dashcamApi/getDashcamStatus", self._signed_body({"deviceId": device_id})
@@ -712,9 +716,14 @@ class MaiClient:
         status. Response: resultBodyObject = {"result": Any|None,
         "isActive": bool, "planType": str, "interval": Any|None}.
 
-        Example resultBodyObject (this account had no active plan):
+        `value_added_service` 2 is a known-good id (console default;
+        returns a real plan status rather than an error).
+
+        Example resultBodyObjects (accounts with no active plan):
         {"result": null, "isActive": false, "planType": "pt_vip_0",
         "interval": null}
+        {"result": false, "isActive": false, "planType": "pt_vip_0",
+        "interval": "month"}
         """
         return self._post(
             "/dashcamApi/isActiveValueAddedService",
@@ -872,37 +881,18 @@ class MaiClient:
             self._signed_body({"deviceId": device_id, "alarmId": alarm_id}),
         )
 
-    def get_sum_count_group_by_create_time(
-        self, device_id: str, begin_time_ms: int, end_time_ms: int, alarm_type: int
-    ) -> Dict[str, Any]:
-        """POST /dashcamApi/getSumCountGroupByCreateTime: per-day count of
-        one alarm type in [begin_time_ms, end_time_ms].
-
-        UNCONFIRMED (decompiled app only, never seen in captured
-        traffic): request fields deviceId/beginTime/endTime/alarmType;
-        resultBodyObject parsed as a list of {"count": int, "date": int
-        (epoch ms)} (OutPowerCount). The app only calls it with alarm type
-        105, overlaid on its power-monitor voltage chart, which hints 105
-        is a power-related alarm (also unconfirmed).
-        """
-        extra = {
-            "deviceId": device_id,
-            "beginTime": begin_time_ms,
-            "endTime": end_time_ms,
-            "alarmType": alarm_type,
-        }
-        return self._post(
-            "/dashcamApi/getSumCountGroupByCreateTime", self._signed_body(extra)
-        )
-
     def get_lost_status(self, device_id: str) -> Dict[str, Any]:
         """POST /dashcamApi/getLostStatus: anti-theft "lost mode" state
         (the app's lostOn/lostOff toggle it; not wrapped here).
 
-        UNCONFIRMED (decompiled app only): resultBodyObject parsed as
-        {"lost": bool, "lostSessionId": str, "remainingCount": int,
-        "status": int} (DeviceTrackStatus); `status`/`remainingCount`
-        semantics unknown.
+        CONFIRMED response (lost mode off): resultBodyObject =
+        {"lost": bool, "lostSessionId": str|None, "remainingCount":
+        int|None}. The app's DeviceTrackStatus model also has a `status`
+        field, absent in the real response; `lostSessionId`/
+        `remainingCount` with lost mode on are unobserved.
+
+        Example resultBodyObject:
+        {"lost": false, "lostSessionId": null, "remainingCount": null}
         """
         return self._post(
             "/dashcamApi/getLostStatus", self._signed_body({"deviceId": device_id})
@@ -920,7 +910,8 @@ class MaiClient:
         updateFence: {"deviceId", "coordinatesLat": float,
         "coordinatesLng": float, "radius": int, "radiusUnit": int|None,
         "status": bool (fence enabled), "address": str, "poi": str}.
-        Probably null when no fence is configured.
+        CONFIRMED: resultBodyObject is null when no fence is configured;
+        the populated shape above is still unconfirmed.
         """
         return self._post("/fenceApi/getFence", self._signed_body({"deviceId": device_id}))
 
@@ -955,7 +946,14 @@ class MaiClient:
         "endTs": int, "distance": float, "avgSpeed": str, "maxSpeed":
         float, "startAddress", "startPoi", "endAddress", "endPoi",
         "filePath", "storageConfigType", "storeType", "isFirstTrip"}]}.
-        Distance/speed/time units are unknown.
+        Distance/speed/time units are unknown. The call itself works
+        (CONFIRMED on eu-api.70mai.com with only deviceIds/count), but for
+        an A810 with a SIM plugin it returned
+        {"deviceTripStatisticsDTO": null, "list": []}. The app's trip
+        screen also reads a local GPS database recorded by the phone
+        (DBGpsInfo) and uploads tracks via offlineTrackApi, so trips may
+        only exist for phone-recorded drives, not dashcam-reported ones
+        (unconfirmed).
         """
         extra: Dict[str, Any] = {"count": count}
         if device_ids:
@@ -1040,7 +1038,36 @@ class MaiClient:
     # offlineDeviceApi: locally-paired / no-SIM devices (deviceId is a MAC)
     # ------------------------------------------------------------------ #
     def get_offline_device_detail(self, device_id_mac: str) -> Dict[str, Any]:
-        """POST /offlineDeviceApi/V2/getDeviceDetail."""
+        """POST /offlineDeviceApi/V2/getDeviceDetail. Despite the
+        "offline" name it also works for a cloud-connected device id (not
+        only MACs), and is the only call seen so far that returns the
+        dashcam's OWN firmware version and SD-card status (the firmware
+        get_sim_plugin_detail() reports is the SIM plugin's).
+
+        CONFIRMED response: resultBodyObject = {"device": {...same shape
+        as get_dashcam_detail()'s "device"...}, "accountcar": Any|None,
+        "simPlugin": Any|None, "subdeviceList": Any|None,
+        "statisticsList": [{"key": str, "value": str}]}. Observed
+        statisticsList keys (all values are strings): "FWversion"
+        (dashcam firmware), "FWversionDate" (epoch seconds), "Timestamp"
+        (YYYYMMDDhhmmss, presumably when the device last reported),
+        "ApkTFStatus" (SD/TF card status, "SDOK" observed), "bssid".
+
+        Example resultBodyObject (anonymized; "device" trimmed):
+        {
+          "accountcar": null,
+          "device": {"deviceId": "deadbeefdeadbeefdeadbeefdeadbeef", "...": "..."},
+          "simPlugin": null,
+          "statisticsList": [
+            {"key": "FWversionDate", "value": "1769468400"},
+            {"key": "Timestamp", "value": "20260903104649"},
+            {"key": "ApkTFStatus", "value": "SDOK"},
+            {"key": "bssid", "value": "aa:bb:cc:dd:ee:02"},
+            {"key": "FWversion", "value": "1.9.118ww"}
+          ],
+          "subdeviceList": null
+        }
+        """
         return self._post(
             "/offlineDeviceApi/V2/getDeviceDetail",
             self._signed_body({"deviceId": device_id_mac}),
@@ -1079,9 +1106,13 @@ class MaiClient:
         by 1000 and compares it against 12-18 V / up to 34 V thresholds),
         drawn as three differently-styled segments of one curve; what
         distinguishes the three series isn't recoverable without the
-        app's string resources. That screen fetches all three at once via
-        get_device_status_history_daily_in_key_list() rather than this
-        method. `smart_type` is a fixed value of 51. `timezone_offset`/
+        app's string resources. That screen belongs to the SIM plugin's
+        out-power monitor, so history is probably only populated when
+        sim_plugin_support_out_power() is true (unconfirmed). The app
+        fetches all three keys at once via
+        /offlineDeviceApi/V3/getDeviceStatusHistoryDailyInKeyList, but
+        eu-api.70mai.com answers that path with HTTP 404 ("资源不存在"),
+        so it isn't wrapped here. `smart_type` is a fixed value of 51. `timezone_offset`/
         `dst_offset` are in quarter-hours (see sync_user_config()).
 
         Response: resultBodyObject = list of {"keyIndex": str, "timeGap":
@@ -1102,43 +1133,6 @@ class MaiClient:
         }
         return self._post(
             "/offlineDeviceApi/V3/getDeviceStatusHistoryDaily", self._signed_body(extra)
-        )
-
-    def get_device_status_history_daily_in_key_list(
-        self,
-        device_id: str,
-        year: int,
-        month: int,
-        day: int,
-        timezone_offset: int,
-        dst_offset: int = 0,
-        key_indexes: Sequence[str] = ("1.2", "1.3", "1.4"),
-        smart_type: int = 51,
-    ) -> Dict[str, Any]:
-        """POST /offlineDeviceApi/V3/getDeviceStatusHistoryDailyInKeyList:
-        same as get_device_status_history_daily() but for several
-        keyIndexes in one call (`keyIndexList`); this is what the app's
-        power-monitor screen actually calls, always with
-        ["1.2", "1.3", "1.4"]. `timezone_offset`/`dst_offset` are in
-        quarter-hours (see quarter_hour_offsets()).
-
-        UNCONFIRMED (decompiled app only): resultBodyObject parsed as a
-        flat list of {"keyIndex": str, "smartType": str, "latest": int,
-        "latestTs": int, "max": int, "maxTs": int, "min": int, "minTs":
-        int} (OutPowerEntry), values in millivolts.
-        """
-        extra = {
-            "deviceId": device_id,
-            "keyIndexList": list(key_indexes),
-            "year": year,
-            "month": month,
-            "day": day,
-            "smartType": smart_type,
-            "timeOffset": {"timezoneOffset": timezone_offset, "dstOffset": dst_offset},
-        }
-        return self._post(
-            "/offlineDeviceApi/V3/getDeviceStatusHistoryDailyInKeyList",
-            self._signed_body(extra),
         )
 
     def sim_plugin_support_out_power(self, device_id: str) -> Dict[str, Any]:
@@ -1341,12 +1335,34 @@ class MaiClient:
         """POST /UserspaceApi/getUserSpaceBrief: account-wide cloud
         storage usage. No extra request fields.
 
-        UNCONFIRMED (decompiled app only): resultBodyObject parsed as
-        CloudGalleryOverView = {"userId", "diskSize": int, "videoCount":
-        int, "videoSize": int, "picCount": int, "picSize": int,
+        CONFIRMED response: resultBodyObject = {"userId": int,
+        "diskSize": int (quota, bytes: 1073741824 = 1 GiB on a free
+        account), "videoCount": int, "videoSize": int (bytes),
+        "picCount": int, "picSize": int, "otherCount", "otherSize",
         "safecaseVideoCount", "safecaseVideoSize", "safecasePicCount",
-        "safecasePicSize", "recycleCount", "recycleSize", "fileList":
-        [...]}. Sizes presumably in bytes.
+        "safecasePicSize", "recycleCount", "recycleSize", "fileList"}
+        (the last ten observed null). Its videoCount/videoSize can be
+        lower than the sum of get_userspace_device_stats() for the same
+        account (2 vs 6 videos in one capture); why is unknown.
+
+        Example resultBodyObject (anonymized):
+        {
+          "diskSize": 1073741824,
+          "fileList": null,
+          "otherCount": null,
+          "otherSize": null,
+          "picCount": 0,
+          "picSize": 0,
+          "recycleCount": null,
+          "recycleSize": null,
+          "safecasePicCount": null,
+          "safecasePicSize": null,
+          "safecaseVideoCount": null,
+          "safecaseVideoSize": null,
+          "userId": 1000001,
+          "videoCount": 2,
+          "videoSize": 41552299
+        }
         """
         return self._post("/UserspaceApi/getUserSpaceBrief", self._signed_body())
 
@@ -1354,11 +1370,27 @@ class MaiClient:
         """POST /UserspaceApi/getDeviceStats: per-device cloud storage
         usage. No extra request fields.
 
-        UNCONFIRMED (decompiled app only): resultBodyObject parsed as a
-        list of CloudGalleryDevice = {"deviceId", "deviceType",
-        "deviceModule", "deviceChannel", "videoCount": int, "videoSize":
-        int, "picCount": int, "picSize": int, "createTimestamp",
-        "updateTimestamp"}.
+        CONFIRMED response: resultBodyObject = list of {"deviceId",
+        "deviceType", "deviceModule", "deviceChannel", "userId" (observed
+        null), "videoCount": int, "videoSize": int (bytes), "picCount":
+        int, "picSize": int, "updateTimestamp": int}, one entry per
+        device that has cloud files.
+
+        Example resultBodyObject (anonymized):
+        [
+          {
+            "deviceChannel": 65001001,
+            "deviceId": "deadbeefdeadbeefdeadbeefdeadbeef",
+            "deviceModule": 65001,
+            "deviceType": 65,
+            "picCount": 0,
+            "picSize": 0,
+            "updateTimestamp": 1700000000000,
+            "userId": null,
+            "videoCount": 6,
+            "videoSize": 124875489
+          }
+        ]
         """
         return self._post("/UserspaceApi/getDeviceStats", self._signed_body())
 

@@ -167,43 +167,6 @@ def test_get_device_status_history_daily_body(authed_client: MaiClient, fake_ses
 
 
 # ------------------------------------------------------------------ #
-# get_device_status_history_daily_in_key_list
-# ------------------------------------------------------------------ #
-def test_get_device_status_history_daily_in_key_list_defaults(
-    authed_client: MaiClient, fake_session: FakeSession
-) -> None:
-    fake_session.queue_post(FakeResponse(json_data=envelope([])))
-
-    authed_client.get_device_status_history_daily_in_key_list(
-        "dev-1", year=2026, month=9, day=13, timezone_offset=8
-    )
-
-    body = last_sent_body(fake_session)
-    assert body["deviceId"] == "dev-1"
-    assert body["keyIndexList"] == ["1.2", "1.3", "1.4"]
-    assert "keyIndex" not in body
-    assert (body["year"], body["month"], body["day"]) == (2026, 9, 13)
-    assert body["smartType"] == 51
-    assert body["timeOffset"] == {"timezoneOffset": 8, "dstOffset": 0}
-    assert (
-        fake_session.post_calls[-1].url
-        == f"{DEFAULT_BASE_URL}/offlineDeviceApi/V3/getDeviceStatusHistoryDailyInKeyList"
-    )
-
-
-def test_get_device_status_history_daily_in_key_list_custom_keys(
-    authed_client: MaiClient, fake_session: FakeSession
-) -> None:
-    fake_session.queue_post(FakeResponse(json_data=envelope([])))
-    authed_client.get_device_status_history_daily_in_key_list(
-        "dev-1", 2026, 9, 13, timezone_offset=4, dst_offset=4, key_indexes=("1.4",)
-    )
-    body = last_sent_body(fake_session)
-    assert body["keyIndexList"] == ["1.4"]
-    assert body["timeOffset"] == {"timezoneOffset": 4, "dstOffset": 4}
-
-
-# ------------------------------------------------------------------ #
 # quarter_hour_offsets
 # ------------------------------------------------------------------ #
 @pytest.mark.parametrize(
@@ -315,7 +278,6 @@ def test_get_history_device_track_with_trip_id_all_fields(
     [
         ("get_device_trip_overview", ()),
         ("get_history_device_track_with_trip_id", ("dev-1", "trip-1")),
-        ("get_device_status_history_daily_in_key_list", ("dev-1", 2026, 9, 13, 8)),
     ],
 )
 def test_new_detailed_endpoints_require_authentication(client: MaiClient, method_name: str, args: tuple) -> None:

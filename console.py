@@ -107,8 +107,8 @@ def device_menu(client: MaiClient, device_id: str) -> None:
             "7) Alarm detail       8) Daily history        9) Report WiFi (offline)\n"
             "10) File details      11) Supported features 12) Dashcam status\n"
             "13) Value-added svc   14) Device switch       15) Set device switch\n"
-            "16) History (all keys) 17) Trip overview      18) Trip track\n"
-            "19) Lost status        20) Geofence           21) Alarm count/day\n"
+            "17) Trip overview      18) Trip track          19) Lost status\n"
+            "20) Geofence\n"
             "0) Back to main menu"
         )
         choice = console.input("> ").strip()
@@ -135,7 +135,7 @@ def device_menu(client: MaiClient, device_id: str) -> None:
                 device_id,
                 int(begin) if begin else now_ms - week_ms,
                 int(create) if create else now_ms,
-                [105, 108],
+                None,  # no type filter, like the app (a guessed list dropped real alarms)
                 int(page) if page else 20,
             )
         elif choice == "7":
@@ -196,21 +196,6 @@ def device_menu(client: MaiClient, device_id: str) -> None:
                     {"eventType": 9, "resourceKeys": []},
                 ],
             )
-        elif choice == "16":
-            today = date.today()
-            raw = console.input(f"date YYYY-MM-DD [default {today.isoformat()}]: ").strip()
-            day = date.fromisoformat(raw) if raw else today
-            tz_offset, dst_offset = quarter_hour_offsets()
-            call(
-                "getDeviceStatusHistoryDailyInKeyList",
-                client.get_device_status_history_daily_in_key_list,
-                device_id,
-                day.year,
-                day.month,
-                day.day,
-                tz_offset,
-                dst_offset,
-            )
         elif choice == "17":
             call("getDeviceTripOverview", client.get_device_trip_overview, [device_id])
         elif choice == "18":
@@ -226,18 +211,6 @@ def device_menu(client: MaiClient, device_id: str) -> None:
             call("getLostStatus", client.get_lost_status, device_id)
         elif choice == "20":
             call("getFence", client.get_fence, device_id)
-        elif choice == "21":
-            now_ms = int(time.time() * 1000)
-            month_ms = 30 * 24 * 60 * 60 * 1000
-            alarm_type = console.input("alarmType [default 105]: ").strip()
-            call(
-                "getSumCountGroupByCreateTime",
-                client.get_sum_count_group_by_create_time,
-                device_id,
-                now_ms - month_ms,
-                now_ms,
-                int(alarm_type) if alarm_type else 105,
-            )
         elif choice == "0":
             return
         else:

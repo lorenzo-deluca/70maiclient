@@ -43,12 +43,6 @@ CASES: list[tuple[str, tuple, str, Dict[str, Any]]] = [
     ("get_fence", ("dev-1",), "/fenceApi/getFence", {"deviceId": "dev-1"}),
     ("get_user_space_brief", (), "/UserspaceApi/getUserSpaceBrief", {}),
     ("get_userspace_device_stats", (), "/UserspaceApi/getDeviceStats", {}),
-    (
-        "get_sum_count_group_by_create_time",
-        ("dev-1", 1700000000000, 1700086400000, 105),
-        "/dashcamApi/getSumCountGroupByCreateTime",
-        {"deviceId": "dev-1", "beginTime": 1700000000000, "endTime": 1700086400000, "alarmType": 105},
-    ),
 ]
 
 CASE_IDS = [case[0] for case in CASES]
