@@ -1,4 +1,4 @@
-from .client import CHANNEL_ID, DEFAULT_BASE_URL, MaiClient
+from .client import CHANNEL_ID, DEFAULT_BASE_URL, MaiClient, quarter_hour_offsets
 from .exceptions import (
     MaiConnectionError,
     MaiError,
@@ -18,6 +18,7 @@ __all__ = [
     "MaiClient",
     "DEFAULT_BASE_URL",
     "CHANNEL_ID",
+    "quarter_hour_offsets",
     "SignatureProvider",
     "BanyacKeyMd5SignatureProvider",
     "UnimplementedSignatureProvider",

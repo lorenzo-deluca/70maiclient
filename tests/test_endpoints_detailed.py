@@ -5,10 +5,11 @@ explicit test rather than a shared table.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from client70mai.client import DEFAULT_BASE_URL, MaiClient
+from client70mai.client import DEFAULT_BASE_URL, MaiClient, quarter_hour_offsets
 from client70mai.exceptions import MaiNotAuthenticatedError
 
 from .helpers import FakeResponse, FakeSession, envelope, last_sent_body
@@ -163,6 +164,125 @@ def test_get_device_status_history_daily_body(authed_client: MaiClient, fake_ses
         fake_session.post_calls[-1].url
         == f"{DEFAULT_BASE_URL}/offlineDeviceApi/V3/getDeviceStatusHistoryDaily"
     )
+
+
+# ------------------------------------------------------------------ #
+# quarter_hour_offsets
+# ------------------------------------------------------------------ #
+@pytest.mark.parametrize(
+    "utc_offset,expected",
+    [
+        (timedelta(hours=2), (8, 0)),
+        (timedelta(hours=1), (4, 0)),
+        (timedelta(0), (0, 0)),
+        (timedelta(hours=5, minutes=30), (22, 0)),
+        (timedelta(hours=-5), (-20, 0)),
+    ],
+)
+def test_quarter_hour_offsets(utc_offset: timedelta, expected: tuple) -> None:
+    when = datetime(2026, 7, 1, 12, 0, tzinfo=timezone(utc_offset))
+    assert quarter_hour_offsets(when) == expected
+
+
+def test_quarter_hour_offsets_naive_and_default_use_local_time() -> None:
+    naive = datetime(2026, 7, 1, 12, 0)
+    local_offset = naive.astimezone().utcoffset()
+    expected = (int(local_offset.total_seconds() // 60) // 15, 0)
+    assert quarter_hour_offsets(naive) == expected
+    tz, dst = quarter_hour_offsets()
+    assert isinstance(tz, int) and dst == 0
+
+
+# ------------------------------------------------------------------ #
+# get_device_trip_overview
+# ------------------------------------------------------------------ #
+def test_get_device_trip_overview_defaults_omit_unset_fields(
+    authed_client: MaiClient, fake_session: FakeSession
+) -> None:
+    fake_session.queue_post(FakeResponse(json_data=envelope({})))
+
+    authed_client.get_device_trip_overview()
+
+    body = last_sent_body(fake_session)
+    assert body["count"] == 10
+    for key in ("deviceIds", "lastTs", "startTimeStamp", "endTimeStamp", "statisticsType", "deviceCategory"):
+        assert key not in body
+    assert fake_session.post_calls[-1].url == f"{DEFAULT_BASE_URL}/accountApi/V4/getDeviceTripOverview"
+
+
+def test_get_device_trip_overview_all_fields(authed_client: MaiClient, fake_session: FakeSession) -> None:
+    fake_session.queue_post(FakeResponse(json_data=envelope({})))
+
+    authed_client.get_device_trip_overview(
+        device_ids=("dev-1", "dev-2"),
+        count=5,
+        last_ts=1700000000000,
+        start_timestamp=1690000000000,
+        end_timestamp=1700000000000,
+        statistics_type=1,
+        device_category=2,
+    )
+
+    body = last_sent_body(fake_session)
+    assert body["deviceIds"] == ["dev-1", "dev-2"]
+    assert body["count"] == 5
+    assert body["lastTs"] == 1700000000000
+    assert body["startTimeStamp"] == 1690000000000
+    assert body["endTimeStamp"] == 1700000000000
+    assert body["statisticsType"] == 1
+    assert body["deviceCategory"] == 2
+
+
+def test_get_device_trip_overview_empty_device_ids_omitted(
+    authed_client: MaiClient, fake_session: FakeSession
+) -> None:
+    fake_session.queue_post(FakeResponse(json_data=envelope({})))
+    authed_client.get_device_trip_overview(device_ids=[])
+    assert "deviceIds" not in last_sent_body(fake_session)
+
+
+# ------------------------------------------------------------------ #
+# get_history_device_track_with_trip_id
+# ------------------------------------------------------------------ #
+def test_get_history_device_track_with_trip_id_minimal(
+    authed_client: MaiClient, fake_session: FakeSession
+) -> None:
+    fake_session.queue_post(FakeResponse(json_data=envelope("track")))
+
+    authed_client.get_history_device_track_with_trip_id("dev-1", "trip-1")
+
+    body = last_sent_body(fake_session)
+    assert body["deviceId"] == "dev-1"
+    assert body["tripId"] == "trip-1"
+    for key in ("startTimestamp", "endTimestamp", "pageIndex"):
+        assert key not in body
+    assert (
+        fake_session.post_calls[-1].url
+        == f"{DEFAULT_BASE_URL}/carpositionApi/V2/getHistoryDeviceTrackWithTripId"
+    )
+
+
+def test_get_history_device_track_with_trip_id_all_fields(
+    authed_client: MaiClient, fake_session: FakeSession
+) -> None:
+    fake_session.queue_post(FakeResponse(json_data=envelope("track")))
+    authed_client.get_history_device_track_with_trip_id(
+        "dev-1", "trip-1", start_timestamp=1, end_timestamp=2, page_index=0
+    )
+    body = last_sent_body(fake_session)
+    assert (body["startTimestamp"], body["endTimestamp"], body["pageIndex"]) == (1, 2, 0)
+
+
+@pytest.mark.parametrize(
+    "method_name,args",
+    [
+        ("get_device_trip_overview", ()),
+        ("get_history_device_track_with_trip_id", ("dev-1", "trip-1")),
+    ],
+)
+def test_new_detailed_endpoints_require_authentication(client: MaiClient, method_name: str, args: tuple) -> None:
+    with pytest.raises(MaiNotAuthenticatedError):
+        getattr(client, method_name)(*args)
 
 
 # ------------------------------------------------------------------ #

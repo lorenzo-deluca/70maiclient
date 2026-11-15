@@ -39,6 +39,10 @@ CASES: list[tuple[str, tuple, str, Dict[str, Any]]] = [
     ("get_file_details", (["file-1", "file-2"],), "/UserspaceApi/getFileDetails", {"fileIds": ["file-1", "file-2"]}),
     ("get_device_alarm", ("dev-1", "alarm-1"), "/dashcamApi/V2/getDeviceAlarm", {"deviceId": "dev-1", "alarmId": "alarm-1"}),
     ("living", ("dev-1", 8500), "/dashcamApi/living", {"deviceId": "dev-1", "time": 8500}),
+    ("get_lost_status", ("dev-1",), "/dashcamApi/getLostStatus", {"deviceId": "dev-1"}),
+    ("get_fence", ("dev-1",), "/fenceApi/getFence", {"deviceId": "dev-1"}),
+    ("get_user_space_brief", (), "/UserspaceApi/getUserSpaceBrief", {}),
+    ("get_userspace_device_stats", (), "/UserspaceApi/getDeviceStats", {}),
 ]
 
 CASE_IDS = [case[0] for case in CASES]
