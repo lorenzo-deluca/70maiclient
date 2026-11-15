@@ -125,6 +125,18 @@ one method that always reads a specific field
 (`resultBodyObject.token`), confirmed, because the client cannot function
 without it.
 
+Some methods go further and are **UNCONFIRMED** (their docstring says so):
+the endpoint and request fields come only from the decompiled Android app,
+never from captured traffic — trip overview/track, lost-mode status,
+geofence, per-day alarm counts, cloud storage usage, and the multi-key
+daily telemetry history. Their documented response shapes are the app's
+own model classes, so verify them against real responses (e.g. via
+`console.py`) before relying on any field.
+
+`timeOffset` objects (`sync_user_config()`, the daily-history calls) are in
+**quarter-hours**, not hours (`{"timezoneOffset": 4, "dstOffset": 4}` =
+1 h + 1 h); `quarter_hour_offsets()` computes them for local time.
+
 ## For Developers
 
 ### Local setup

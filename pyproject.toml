@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "70maiclient"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reverse-engineered Python client for the 70mai dashcam cloud API (eu-api.70mai.com)"
 readme = "README.md"
 license = "AGPL-3.0-or-later"

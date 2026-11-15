@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from rich.console import Console
 from rich.table import Table
 
-from client70mai import MaiClient
+from client70mai import MaiClient, quarter_hour_offsets
 from client70mai.exceptions import MaiError
 
 console = Console()
@@ -107,6 +107,8 @@ def device_menu(client: MaiClient, device_id: str) -> None:
             "7) Alarm detail       8) Daily history        9) Report WiFi (offline)\n"
             "10) File details      11) Supported features 12) Dashcam status\n"
             "13) Value-added svc   14) Device switch       15) Set device switch\n"
+            "16) History (all keys) 17) Trip overview      18) Trip track\n"
+            "19) Lost status        20) Geofence           21) Alarm count/day\n"
             "0) Back to main menu"
         )
         choice = console.input("> ").strip()
@@ -146,6 +148,7 @@ def device_menu(client: MaiClient, device_id: str) -> None:
             month = console.input(f"month [default {today.month}]: ").strip()
             day = console.input(f"day [default {today.day}]: ").strip()
             key_index = console.input("keyIndex [default 1.2]: ").strip() or "1.2"
+            tz_offset, dst_offset = quarter_hour_offsets()
             call(
                 "getDeviceStatusHistoryDaily",
                 client.get_device_status_history_daily,
@@ -155,7 +158,8 @@ def device_menu(client: MaiClient, device_id: str) -> None:
                 int(day) if day else today.day,
                 key_index,
                 51,
-                0,
+                tz_offset,
+                dst_offset,
             )
         elif choice == "9":
             bssid = console.input("bssid (WiFi MAC, e.g. aa:bb:cc:dd:ee:ff): ").strip()
@@ -192,6 +196,48 @@ def device_menu(client: MaiClient, device_id: str) -> None:
                     {"eventType": 9, "resourceKeys": []},
                 ],
             )
+        elif choice == "16":
+            today = date.today()
+            raw = console.input(f"date YYYY-MM-DD [default {today.isoformat()}]: ").strip()
+            day = date.fromisoformat(raw) if raw else today
+            tz_offset, dst_offset = quarter_hour_offsets()
+            call(
+                "getDeviceStatusHistoryDailyInKeyList",
+                client.get_device_status_history_daily_in_key_list,
+                device_id,
+                day.year,
+                day.month,
+                day.day,
+                tz_offset,
+                dst_offset,
+            )
+        elif choice == "17":
+            call("getDeviceTripOverview", client.get_device_trip_overview, [device_id])
+        elif choice == "18":
+            trip_id = console.input("tripId (an `id` from the trip overview list): ").strip()
+            if trip_id:
+                call(
+                    "getHistoryDeviceTrackWithTripId",
+                    client.get_history_device_track_with_trip_id,
+                    device_id,
+                    trip_id,
+                )
+        elif choice == "19":
+            call("getLostStatus", client.get_lost_status, device_id)
+        elif choice == "20":
+            call("getFence", client.get_fence, device_id)
+        elif choice == "21":
+            now_ms = int(time.time() * 1000)
+            month_ms = 30 * 24 * 60 * 60 * 1000
+            alarm_type = console.input("alarmType [default 105]: ").strip()
+            call(
+                "getSumCountGroupByCreateTime",
+                client.get_sum_count_group_by_create_time,
+                device_id,
+                now_ms - month_ms,
+                now_ms,
+                int(alarm_type) if alarm_type else 105,
+            )
         elif choice == "0":
             return
         else:
@@ -215,7 +261,7 @@ def main() -> None:
         console.print(
             "1) Login              2) Account info (getAllUserInfo)\n"
             "3) List dashcams       4) Select dashcam / open dashcam menu\n"
-            "5) Ads (getAdvertisementByLocation)\n"
+            "5) Ads (getAdvertisementByLocation)  6) Cloud storage usage\n"
             "0) Logout and quit"
         )
         choice = console.input("> ").strip()
@@ -251,6 +297,12 @@ def main() -> None:
                 console.print("[yellow]Log in first.[/yellow]")
                 continue
             call("getAdvertisementByLocation", client.get_advertisement_by_location)
+        elif choice == "6":
+            if not client.token:
+                console.print("[yellow]Log in first.[/yellow]")
+                continue
+            call("getUserSpaceBrief", client.get_user_space_brief)
+            call("getDeviceStats (userspace)", client.get_userspace_device_stats)
         elif choice == "0":
             if client.token:
                 call("logout", client.logout)
